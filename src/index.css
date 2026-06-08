@@ -1,0 +1,98 @@
+/* ── Global styles for Chrome extension popup ── */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, #f0f2f5 0%, #e6e9f0 100%);
+}
+
+#root {
+  padding: 0;
+}
+
+/* Smooth scrolling */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Ant Design overrides for compact popup */
+.ant-card {
+  border-radius: 12px !important;
+}
+
+.ant-tabs-nav {
+  margin-bottom: 12px !important;
+}
+
+.ant-btn {
+  border-radius: 8px !important;
+}
+
+.ant-input {
+  border-radius: 8px !important;
+}
+
+.ant-tag {
+  border-radius: 6px !important;
+}
+
+/* Status pulse animation */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+.status-dot-active {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #52c41a;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.status-dot-idle {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d9d9d9;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+/* Lead card hover effect */
+.lead-item:hover {
+  background: rgba(22, 119, 255, 0.04);
+  border-radius: 8px;
+}
+
+/* Gradient header */
+.app-header {
+  background: linear-gradient(135deg, #1677ff 0%, #4096ff 50%, #69b1ff 100%);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  color: #fff;
+}
+
+.app-header h4,
+.app-header .ant-typography {
+  color: #fff !important;
+}
