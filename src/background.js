@@ -15,21 +15,24 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // ── START SCRAPE ──
   if (msg.action === "startScrape") {
-    const { keyword, settings } = msg;
+    const { keyword, settings, filters } = msg;
 
     // Save intent to storage (content script also reads this on load)
     chrome.storage.local.set({
       autoScrape: true,
       scrapeKeyword: keyword,
       scrapeSettings: settings,
+      scrapeFilters: filters || {},
       scrapeStatus: "starting",
     });
 
     // Find existing Google Maps tab or open a new one
-    chrome.tabs.query({ url: "*://www.google.*/maps/*" }, (tabs) => {
-      if (tabs && tabs.length > 0) {
+    chrome.tabs.query({}, (tabs) => {
+      // Filter manually since * in host pattern is invalid for tabs.query
+      const mapsTabs = tabs.filter(t => t.url && t.url.includes("google.") && t.url.includes("/maps/"));
+      if (mapsTabs && mapsTabs.length > 0) {
         // Focus existing tab
-        const tab = tabs[0];
+        const tab = mapsTabs[0];
         activeScrapeTabId = tab.id;
 
         // Update the tab URL to search for the keyword
@@ -37,7 +40,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.update(tab.id, { active: true, url: mapsUrl }, () => {
           // Wait for page to load, then inject
           waitForTabLoad(tab.id, () => {
-            injectAndStart(tab.id, keyword, settings);
+            injectAndStart(tab.id, keyword, settings, filters);
           });
         });
         sendResponse({ success: true });
@@ -47,7 +50,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.create({ url: mapsUrl, active: true }, (tab) => {
           activeScrapeTabId = tab.id;
           waitForTabLoad(tab.id, () => {
-            injectAndStart(tab.id, keyword, settings);
+            injectAndStart(tab.id, keyword, settings, filters);
           });
         });
         sendResponse({ success: true });
@@ -107,7 +110,7 @@ function waitForTabLoad(tabId, callback, maxAttempts = 40) {
   }, 500);
 }
 
-function injectAndStart(tabId, keyword, settings) {
+function injectAndStart(tabId, keyword, settings, filters) {
   chrome.scripting
     .executeScript({
       target: { tabId },
@@ -116,12 +119,14 @@ function injectAndStart(tabId, keyword, settings) {
     .then(() => {
       // Give the content script a moment to set up its listener
       setTimeout(() => {
+        const message = {
+          action: "startScrape",
+          keyword,
+          settings,
+          filters: filters || {},
+        };
         chrome.tabs
-          .sendMessage(tabId, {
-            action: "startScrape",
-            keyword,
-            settings,
-          })
+          .sendMessage(tabId, message)
           .then((resp) => {
             console.log("[BG] Content script responded:", resp);
           })
@@ -130,7 +135,7 @@ function injectAndStart(tabId, keyword, settings) {
             // Retry once after a longer delay
             setTimeout(() => {
               chrome.tabs
-                .sendMessage(tabId, { action: "startScrape", keyword, settings })
+                .sendMessage(tabId, message)
                 .catch((e) => console.error("[BG] Retry also failed:", e.message));
             }, 3000);
           });

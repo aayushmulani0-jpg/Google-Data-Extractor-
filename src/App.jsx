@@ -13,10 +13,11 @@ import {
   Input,
   List,
   Modal,
-  Progress,
   Row,
+  Select,
   Space,
   Statistic,
+  Switch,
   Tabs,
   Tag,
   Tooltip,
@@ -101,6 +102,10 @@ function App() {
   const [activeTab, setActiveTab] = useState("home");
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState({ saved: 0, processed: 0, message: "Idle" });
+  const [selectedKeyword, setSelectedKeyword] = useState(null);
+
+  const [minRating, setMinRating] = useState(null); // e.g. "3.5", "4.0", "4.5"
+  const [includeSponsored, setIncludeSponsored] = useState(true);
 
   const statusPollRef = useRef(null);
 
@@ -128,12 +133,6 @@ function App() {
 
     chrome.storage.local.get(["keywordsData", "scrapeSettings", "autoScrape"], (result) => {
       if (result.keywordsData) setKeywordsData(result.keywordsData);
-      if (result.scrapeSettings) {
-        const s = result.scrapeSettings;
-        setSelectedFields(
-          ["name", "phone", "address", "rating", "website"].filter((f) => s[f] !== false),
-        );
-      }
       if (result.autoScrape) setIsScraping(true);
     });
 
@@ -172,7 +171,7 @@ function App() {
               }
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }, 2000);
     } else {
       clearInterval(statusPollRef.current);
@@ -187,20 +186,23 @@ function App() {
       messageApi.warning("Enter a keyword to search.");
       return;
     }
-    if (!selectedFields.length) {
-      messageApi.warning("Select at least one data field.");
-      return;
-    }
+
+    const settings = { name: true, phone: true, address: true, rating: true, website: true };
+
+    const filters = {
+      minRating: minRating ? parseFloat(minRating) : null,
+      includeSponsored,
+    };
 
     try {
-      await sendMsg({ action: "startScrape", keyword: kw, settings });
+      await sendMsg({ action: "startScrape", keyword: kw, settings, filters });
       setIsScraping(true);
       setScrapeStatus({ saved: 0, processed: 0, message: "Starting..." });
       messageApi.success(`Scraping started for "${kw}"`);
     } catch (err) {
       messageApi.error("Failed to start: " + err.message);
     }
-  }, [keyword, settings, selectedFields, messageApi]);
+  }, [keyword, minRating, includeSponsored, messageApi]);
 
   const handleStopScrape = useCallback(async () => {
     try {
@@ -273,28 +275,6 @@ function App() {
     [keywordsData, messageApi],
   );
 
-  const exportAllCSV = useCallback(() => {
-    if (keys.length === 0) {
-      messageApi.warning("No data to export.");
-      return;
-    }
-    const allLeads = keys.flatMap((kw) =>
-      (keywordsData[kw] || []).map((l) => ({ ...l, keyword: kw })),
-    );
-    const headers = ["Keyword", "Name", "Phone", "Address", "Rating", "Website"];
-    const rows = allLeads.map((l) => [
-      l.keyword || "",
-      l.name || "",
-      l.phone || "",
-      l.address || "",
-      l.rating || "",
-      l.website || "",
-    ]);
-    const ts = new Date().toISOString().slice(0, 10);
-    exportRowsAsCsv(`all_leads_${ts}.csv`, headers, rows);
-    messageApi.success(`Exported ${allLeads.length} leads from ${keys.length} keywords`);
-  }, [keys, keywordsData, messageApi]);
-
   const openWhatsApp = useCallback(
     (phone) => {
       if (!phone) return;
@@ -352,19 +332,39 @@ function App() {
             disabled={isScraping}
           />
 
+
+
+
+
           <div>
             <Text strong style={{ fontSize: 13, display: "block", marginBottom: 6 }}>
-              Data fields to collect
+              Minimum Rating
             </Text>
-            <Checkbox.Group
-              options={dataFields}
-              value={selectedFields}
-              onChange={setSelectedFields}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap: 4,
-              }}
+            <Select
+              allowClear
+              style={{ width: "100%" }}
+              placeholder="Any rating"
+              value={minRating}
+              onChange={setMinRating}
+              disabled={isScraping}
+              options={[
+                { value: "2.0", label: "⭐ 2.0+" },
+                { value: "2.5", label: "⭐ 2.5+" },
+                { value: "3.0", label: "⭐ 3.0+" },
+                { value: "3.5", label: "⭐ 3.5+" },
+                { value: "4.0", label: "⭐ 4.0+" },
+                { value: "4.5", label: "⭐ 4.5+" },
+              ]}
+            />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Text strong style={{ fontSize: 13 }}>Include Sponsored Results</Text>
+            <Switch
+              checked={includeSponsored}
+              onChange={setIncludeSponsored}
+              disabled={isScraping}
+              size="small"
             />
           </div>
 
@@ -427,14 +427,7 @@ function App() {
                 />
               </Col>
             </Row>
-            {scrapeStatus.processed > 0 && (
-              <Progress
-                percent={Math.round((scrapeStatus.saved / scrapeStatus.processed) * 100)}
-                size="small"
-                status="active"
-                format={(pct) => `${pct}% captured`}
-              />
-            )}
+
           </Space>
         </Card>
       )}
@@ -466,6 +459,13 @@ function App() {
   // ══════════════════════════════════════════════
   // ── DATA TAB ──
   // ══════════════════════════════════════════════
+
+  // Auto-select first keyword if none selected or selected was deleted
+  const activeKeyword = selectedKeyword && keywordsData[selectedKeyword]
+    ? selectedKeyword
+    : keys.length > 0 ? keys[0] : null;
+  const activeLeads = activeKeyword ? (keywordsData[activeKeyword] || []) : [];
+
   const renderDataTab = () => (
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
       {/* Stats */}
@@ -486,28 +486,6 @@ function App() {
         </Col>
       </Row>
 
-      {/* Action buttons */}
-      <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-        <Button
-          icon={<DownloadOutlined />}
-          onClick={exportAllCSV}
-          disabled={keys.length === 0}
-          type="primary"
-          ghost
-        >
-          Export All CSV
-        </Button>
-        <Button
-          danger
-          icon={<ClearOutlined />}
-          onClick={clearAll}
-          disabled={keys.length === 0}
-        >
-          Clear All
-        </Button>
-      </Space>
-
-      {/* Keyword cards */}
       {keys.length === 0 ? (
         <Card>
           <Empty
@@ -516,128 +494,151 @@ function App() {
           />
         </Card>
       ) : (
-        keys.map((kw) => {
-          const leads = keywordsData[kw] || [];
-          return (
-            <Card
-              key={kw}
-              size="small"
-              title={
-                <Space>
-                  <SearchOutlined />
-                  <Text strong>{kw}</Text>
-                  <Badge
-                    count={leads.length}
-                    style={{ backgroundColor: "#1677ff" }}
-                    overflowCount={999}
-                  />
-                </Space>
-              }
-              extra={
-                <Space size={4}>
-                  <Tooltip title="Export as CSV">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<DownloadOutlined />}
-                      onClick={() => exportCSV(kw)}
-                    />
-                  </Tooltip>
-                  <Tooltip title="Delete keyword data">
-                    <Button
-                      size="small"
-                      type="text"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => deleteKeyword(kw)}
-                    />
-                  </Tooltip>
-                </Space>
-              }
-            >
-              {leads.length === 0 ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No leads." />
-              ) : (
-                <>
-                  <List
-                    size="small"
-                    dataSource={leads.slice(0, 5)}
-                    renderItem={(lead, idx) => (
-                      <List.Item
-                        key={idx}
-                        className="lead-item"
-                        style={{ padding: "8px 4px" }}
-                        actions={
-                          lead.phone
-                            ? [
-                                <Tooltip title={`WhatsApp: ${lead.phone}`} key="wa">
-                                  <Button
-                                    size="small"
-                                    type="link"
-                                    icon={<MessageOutlined />}
-                                    onClick={() => openWhatsApp(lead.phone)}
-                                  />
-                                </Tooltip>,
-                              ]
-                            : []
-                        }
-                      >
-                        <List.Item.Meta
-                          title={
-                            <Text strong style={{ fontSize: 13 }}>
-                              <UserOutlined style={{ marginRight: 4, color: "#1677ff" }} />
-                              {lead.name || "Unnamed"}
+        <>
+          {/* Keyword selector */}
+          <Card size="small">
+            <Space direction="vertical" size={10} style={{ width: "100%" }}>
+              <Text strong style={{ fontSize: 13 }}>Select Keyword</Text>
+              <Select
+                style={{ width: "100%" }}
+                value={activeKeyword}
+                onChange={(val) => setSelectedKeyword(val)}
+                placeholder="Select a keyword"
+                options={keys.map((kw) => ({
+                  value: kw,
+                  label: (
+                    <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                      <span>{kw}</span>
+                      <Badge
+                        count={(keywordsData[kw] || []).length}
+                        style={{ backgroundColor: "#1677ff" }}
+                        overflowCount={999}
+                      />
+                    </Space>
+                  ),
+                }))}
+              />
+
+              {/* Action buttons for selected keyword */}
+              <Space style={{ width: "100%", justifyContent: "flex-end" }}>
+                <Button
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  onClick={() => exportCSV(activeKeyword)}
+                  type="primary"
+                  ghost
+                >
+                  Export CSV
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => deleteKeyword(activeKeyword)}
+                >
+                  Delete
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  icon={<ClearOutlined />}
+                  onClick={clearAll}
+                >
+                  Clear All
+                </Button>
+              </Space>
+            </Space>
+          </Card>
+
+          {/* Leads for selected keyword */}
+          <Card
+            size="small"
+            title={
+              <Space>
+                <SearchOutlined />
+                <Text strong>{activeKeyword}</Text>
+                <Badge
+                  count={activeLeads.length}
+                  style={{ backgroundColor: "#1677ff" }}
+                  overflowCount={999}
+                />
+              </Space>
+            }
+          >
+            {activeLeads.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No leads found for this keyword." />
+            ) : (
+              <List
+                size="small"
+                dataSource={activeLeads}
+                pagination={{
+                  pageSize: 10,
+                  size: "small",
+                  showTotal: (total) => `${total} leads`,
+                  showSizeChanger: false,
+                }}
+                renderItem={(lead, idx) => (
+                  <List.Item
+                    key={lead.uid || idx}
+                    className="lead-item"
+                    style={{ padding: "8px 4px" }}
+                    actions={
+                      lead.phone
+                        ? [
+                          <Tooltip title={`WhatsApp: ${lead.phone}`} key="wa">
+                            <Button
+                              size="small"
+                              type="link"
+                              icon={<MessageOutlined />}
+                              onClick={() => openWhatsApp(lead.phone)}
+                            />
+                          </Tooltip>,
+                        ]
+                        : []
+                    }
+                  >
+                    <List.Item.Meta
+                      title={
+                        <Text strong style={{ fontSize: 13 }}>
+                          <UserOutlined style={{ marginRight: 4, color: "#1677ff" }} />
+                          {lead.name || "Unnamed"}
+                        </Text>
+                      }
+                      description={
+                        <Space direction="vertical" size={2} style={{ fontSize: 11 }}>
+                          {lead.phone && (
+                            <Text type="secondary">
+                              <PhoneOutlined style={{ marginRight: 4 }} />
+                              {lead.phone}
                             </Text>
-                          }
-                          description={
-                            <Space direction="vertical" size={2} style={{ fontSize: 11 }}>
-                              {lead.phone && (
-                                <Text type="secondary">
-                                  <PhoneOutlined style={{ marginRight: 4 }} />
-                                  {lead.phone}
-                                </Text>
-                              )}
-                              {lead.address && (
-                                <Text type="secondary" style={{ maxWidth: 220 }} ellipsis>
-                                  <EnvironmentOutlined style={{ marginRight: 4 }} />
-                                  {lead.address}
-                                </Text>
-                              )}
-                              {lead.rating && (
-                                <Text type="secondary">
-                                  <StarOutlined style={{ marginRight: 4, color: "#faad14" }} />
-                                  {lead.rating}
-                                </Text>
-                              )}
-                              {lead.website && (
-                                <Text type="secondary" style={{ maxWidth: 220 }} ellipsis>
-                                  <GlobalOutlined style={{ marginRight: 4 }} />
-                                  {lead.website}
-                                </Text>
-                              )}
-                            </Space>
-                          }
-                        />
-                      </List.Item>
-                    )}
-                  />
-                  {leads.length > 5 && (
-                    <div
-                      style={{
-                        textAlign: "center",
-                        padding: "6px 0",
-                        color: "#8c8c8c",
-                        fontSize: 12,
-                      }}
-                    >
-                      + {leads.length - 5} more — export CSV to see all
-                    </div>
-                  )}
-                </>
-              )}
-            </Card>
-          );
-        })
+                          )}
+                          {lead.address && (
+                            <Text type="secondary" style={{ maxWidth: 260 }} ellipsis>
+                              <EnvironmentOutlined style={{ marginRight: 4 }} />
+                              {lead.address}
+                            </Text>
+                          )}
+                          {lead.rating && (
+                            <Text type="secondary">
+                              <StarOutlined style={{ marginRight: 4, color: "#faad14" }} />
+                              {lead.rating}
+                            </Text>
+                          )}
+                          {lead.website && (
+                            <Text type="secondary" style={{ maxWidth: 260 }} ellipsis>
+                              <GlobalOutlined style={{ marginRight: 4 }} />
+                              {lead.website}
+                            </Text>
+                          )}
+                        </Space>
+                      }
+                    />
+                  </List.Item>
+                )}
+              />
+            )}
+          </Card>
+        </>
       )}
     </Space>
   );
@@ -703,9 +704,7 @@ function App() {
     </Space>
   );
 
-  // ══════════════════════════════════════════════
-  // ── RENDER ──
-  // ══════════════════════════════════════════════
+
   return (
     <ConfigProvider theme={antTheme}>
       <AntdApp>

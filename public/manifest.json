@@ -25,19 +25,5 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://www.google.com/maps/*",
-        "https://www.google.co.in/maps/*",
-        "https://www.google.co.uk/maps/*",
-        "https://www.google.ca/maps/*",
-        "https://www.google.com.au/maps/*",
-        "https://maps.google.com/*"
-      ],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
   "icons": {}
 }
